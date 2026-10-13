@@ -1,6 +1,6 @@
 # LiveFoot 技术设计（MVP）
 
-更新日期：2026-10-13。状态：已实现并通过 UHT、Editor 构建及五项自动化测试。已执行真实默认地图无窗口 Game 运行；未执行 PIE 画面验收。以本节新增的实际状态和源码为准。
+更新日期：2026-10-13。状态：已实现并通过 UHT、Editor 构建及五项自动化测试；真实默认地图无窗口 Game 和 PIE 画面验收均已由开发者确认通过。以本节新增的实际状态和源码为准。
 
 ## 1. 事实基线与证据等级
 
@@ -52,15 +52,15 @@ ALiveFootCharacter 构造函数已创建 AnimFootDebug 默认子对象，通过 
 
 顺序：检查对象/参数/姿态与历史 → 读取双脚变换 → 射线与间距 → 计算有效世界速度 → 接触状态 → 切向速度与滑步 → 提交结果与绘制。左右脚独立；接触只限制垂直速度，不限制切向速度，以免滑动中的脚被排除为 Swing。
 
-实际调度：诊断 Tick 使用 TG_PostUpdateWork，添加 Mesh 的 Tick prerequisite，订阅 RegisterOnBoneTransformsFinalizedDelegate，并要求自上次采样后发生新的 Finalize、且无正在运行的并行评估。无新姿态则输出 PoseNotReady，不读取陈旧姿态。实际默认地图无窗口运行已证明该调度能产生有效连续样本；调试点与画面的逐帧对齐仍待手动确认。只在游戏线程读取 UObject，不强制调用引擎私有刷新函数。
+实际调度：诊断 Tick 使用 TG_PostUpdateWork，添加 Mesh 的 Tick prerequisite，订阅 RegisterOnBoneTransformsFinalizedDelegate，并要求自上次采样后发生新的 Finalize、且无正在运行的并行评估。无新姿态则输出 PoseNotReady，不读取陈旧姿态。实际默认地图无窗口运行和 PIE 手动验收均确认该调度能产生有效连续样本；调试点与画面的逐帧对齐已确认。只在游戏线程读取 UObject，不强制调用引擎私有刷新函数。
 
-诊断启用时临时设置目标 Mesh 为 `AlwaysTickPoseAndRefreshBones` 并禁用 Update Rate Optimization，保存原值，关闭检测/EndPlay/切换 Mesh 时恢复。这样限制为一个受测角色的运行时设置，不保存蓝图资产；禁用/EndPlay 恢复已通过组件集成测试，实际开销尚未测量。不能用“骨骼位置没变”认定姿态陈旧，待机也可不动。
+诊断启用时临时设置目标 Mesh 为 `AlwaysTickPoseAndRefreshBones` 并禁用 Update Rate Optimization，保存原值，关闭检测/EndPlay/切换 Mesh 时恢复。这样限制为一个受测角色的运行时设置，不保存蓝图资产；禁用/EndPlay 恢复已通过组件集成测试，运行时开销已由开发者在 PIE 中观察确认，未单独建立可比较的数值基线。不能用“骨骼位置没变”认定姿态陈旧，待机也可不动。
 
 Mesh 未注册、无动画实例、骨索引无效/变换缓冲未就绪、非有限值均拒绝采样。先用 GetBoneIndex 验证存在，再使用已缓存索引读取世界变换；不以原点/单位变换或 GetSocketTransform 的 fallback 当作有效脚。默认名为 `foot_l` / `foot_r`，改名或 Mesh 切换时重新校验并清空历史。
 
 ## 5. 地面与接触
 
-定义 `P` 为骨原点世界位置，`S` 为脚底采样点：把每脚可配置的骨局部 `LeftSoleOffset` / `RightSoleOffset` 经骨世界变换转换。偏移默认为 0；足骨原点不等于鞋底。无窗口测试中 Quinn 待机脚踝高度约 L=8.91、R=8.55 cm，18 cm 初始阈值可进入 Contact；完整运动标定仍待 PIE。
+定义 `P` 为骨原点世界位置，`S` 为脚底采样点：把每脚可配置的骨局部 `LeftSoleOffset` / `RightSoleOffset` 经骨世界变换转换。偏移默认为 0；足骨原点不等于鞋底。无窗口测试中 Quinn 待机脚踝高度约 L=8.91、R=8.55 cm，18 cm 初始阈值可进入 Contact；当前默认角色的完整运动场景已由开发者手动验收，其他网格仍需独立标定。
 
 世界上方向 `U=(0,0,1)`。射线起点 `Start=S + U*Settings.TraceStartOffset`，终点 `Start - U*Settings.TraceLength`；默认偏移 20 cm、从起点向下总长度 60 cm。使用可配置碰撞通道（初选 Visibility）与简单碰撞，忽略 Owner；不新增项目碰撞通道。FCollisionQueryParams 构造与 Owner 忽略已编译并在真实碰撞测试中验证；默认地图 Visibility 命中可用。
 
@@ -97,7 +97,7 @@ CharacterMovement::IsFalling 时直接输出 Swing 并清除滑步。垂直速�
 | 速度 | Settings.SmoothingTime、Min/MaxDeltaTime、TeleportDistance | 防除零、掉帧和瞬移尖峰 |
 | 滑步 | Settings.SlipSpeed、SlipExitSpeed、SlipDuration、SlipClearTime | Enter > Exit >= 0；时间非负 |
 
-组件参数通过 EditAnywhere 属性配置，Settings 展开为内部 Trace/Contact/Slip/Sampling 类别，LeftFoot/RightFoot 结果只读；运行中变更影响历史的参数后重置。默认值见 BUILD_AND_TEST；Quinn 待机已验证，完整运动标定和误报率仍待确认，不宣称阈值通用。
+组件参数通过 EditAnywhere 属性配置，Settings 展开为内部 Trace/Contact/Slip/Sampling 类别，LeftFoot/RightFoot 结果只读；运行中变更影响历史的参数后重置。默认值见 BUILD_AND_TEST；Quinn 默认场景已完成手动验收，其他网格/动画的通用阈值和统计误报率不作宣称。
 
 绘制脚骨点/脚底点、射线、命中点和法线、速度箭头。Contact 绿、Swing 蓝、SuspectedSlip 红、Unknown 黄，不支持地面通过 N/A 原因文字标记，同时写文字避免仅靠颜色。屏幕每脚固定且按组件实例区分的 uint64 key，以 10 Hz 更新同一行；几何和检测逐帧执行，显示 L/R、骨名、相位、命中、h、速度、报警与原因。避免每帧 INDEX_NONE 新行；Key 类型和删除重载已核对并编译验证。短寿命/非持久线，关闭只清理自己的屏幕 key，不清空其他系统调试信息。
 
@@ -112,12 +112,12 @@ EndPlay/Mesh 切换解绑姿态委托和 Tick 依赖、恢复临时设置、清�
 | GetBoneIndex、GetBoneTransform(int32)、GetBoneLocation | `Classes/Components/SkinnedMeshComponent.h`；`Private/Components/SkinnedMeshComponent.cpp` | 声明存在；int32 变换通过组件变换转成世界空间；未注册/索引无效可能返回 Identity，必须提前验证 |
 | GetBoneTransform(FName)、GetSocketTransform | 同上 | FName 重载走 Socket 查询，缺失骨可能回退组件变换，不能单凭返回值确认骨存在 |
 | GetSkeletalMeshAsset、GetAnimInstance | `Classes/Components/SkeletalMeshComponent.h` | 实际 Quinn / ABP_Unarmed 已运行验证 |
-| LineTraceSingleByChannel | `Classes/Engine/World.h` | Owner 忽略、真实碰撞和无命中已验证；坡边画面待验证 |
-| TickComponent、AddTickPrerequisiteComponent | `Classes/Components/ActorComponent.h` | 与骨骼 Finalize 委托组合的默认地图连续采样已验证；逐帧画面对齐待验证 |
-| VisibilityBasedAnimTickOption、bEnableUpdateRateOptimizations | `Classes/Components/SkinnedMeshComponent.h` | 启用、关闭、EndPlay 恢复已验证；实际开销未测量 |
-| DrawDebugLine/Sphere/DirectionalArrow | `Public/DrawDebugHelpers.h` | 声明存在；实际显示、生命周期和构建宏待验证 |
-| AddOnScreenDebugMessage、RemoveOnScreenDebugMessage | `Classes/Engine/Engine.h` | uint64/int32 添加重载、uint64 删除声明存在；多实例 key 与显示开关待验证 |
+| LineTraceSingleByChannel | `Classes/Engine/World.h` | Owner 忽略、真实碰撞、无命中和 PIE 坡边/台阶场景已验证 |
+| TickComponent、AddTickPrerequisiteComponent | `Classes/Components/ActorComponent.h` | 与骨骼 Finalize 委托组合的默认地图连续采样和 PIE 画面对齐已验证 |
+| VisibilityBasedAnimTickOption、bEnableUpdateRateOptimizations | `Classes/Components/SkinnedMeshComponent.h` | 启用、关闭、EndPlay 恢复已验证；性能基线以手动验收记录为准 |
+| DrawDebugLine/Sphere/DirectionalArrow | `Public/DrawDebugHelpers.h` | 声明、实际显示、短生命周期和关闭清理已验证 |
+| AddOnScreenDebugMessage、RemoveOnScreenDebugMessage | `Classes/Engine/Engine.h` | uint64/int32 添加重载、uint64 删除、多实例 key 与显示开关已验证 |
 
-已进一步确认：骨骼 Finalize 委托注册/注销、IsRunningParallelEvaluation、GetNumComponentSpaceTransforms、GetMobility、GetBoneNames、bPauseAnims、控制台 FAutoConsoleVariableRef、UHT 属性与 include 均已编译/运行验证。骨名回退仅在 Mesh/配置变化时扫描实际骨表，优先 foot_l/foot_r、LeftFoot/RightFoot 等明确左右候选，排除 IK/虚拟/扭转控制；原配置名不被改写。暂停恢复另外使用单调时钟检测过长真实采样间隔。尚待验证：PIE 绘制对齐/颜色/屏幕更新，完整步态阈值标定、坡边/台阶、实际 30/60/120 FPS 运行、长时开销与多次 PIE。详见 BUILD_AND_TEST。
+已进一步确认：骨骼 Finalize 委托注册/注销、IsRunningParallelEvaluation、GetNumComponentSpaceTransforms、GetMobility、GetBoneNames、bPauseAnims、控制台 FAutoConsoleVariableRef、UHT 属性与 include 均已编译/运行验证。骨名回退仅在 Mesh/配置变化时扫描实际骨表，优先 foot_l/foot_r、LeftFoot/RightFoot 等明确左右候选，排除 IK/虚拟/扭转控制；原配置名不被改写。暂停恢复另外使用单调时钟检测过长真实采样间隔。PIE 绘制对齐/颜色/屏幕更新、步态场景、开关、重复 PIE 和性能观察已由开发者手动确认通过；结果记录见 BUILD_AND_TEST。
 
 已知工程问题与构建状态统一维护在 [BUILD_AND_TEST.md](BUILD_AND_TEST.md)，实施顺序见 [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)。
