@@ -60,6 +60,8 @@
 
 最终记录（本地 2026-10-13 17:26）：`Saved/Automation/LiveFoot-MVP-final/index.json` / `index.html`；完整日志 `Saved/Logs/LiveFoot-MVP-automation-final.log`，控制台/进程退出码 `LiveFoot-MVP-automation-final-console.log`。5 项全部 Success、0 警告/错误。缺骨/缺动画警告为测试明确预期且各仅一次，不是关闭日志来掩盖故障。
 
+继续验证记录（本地 2026-10-13 21:49）：关闭编辑器状态下再次执行同一 `LiveFootEditor Win64 Development` 目标，`Saved/Logs/LiveFoot-MVP-final-rerun.log` 退出码 0（Target up to date，Result: Succeeded）。随后使用固定绝对路径执行同一无窗口 Game 自动化命令，`Saved/Logs/LiveFoot-MVP-automation-final-rerun2.log` 进程退出码 0，`Saved/Automation/LiveFoot-MVP-final-rerun2/index.json` 记录 5 项 Success、0 Fail、0 Warning，日志包含 `5 tests performed`。这次复验没有新增源码修改。
+
 | 测试 | 已自动验证的范围 |
 | --- | --- |
 | LiveFoot.ProjectAssets | 真实蓝图父类重定向、原生组件继承、Mesh/AnimationMode/AnimClass、双脚骨、GameMode DefaultPawnClass |
@@ -105,7 +107,7 @@ Quinn 待机默认偏移 0 和接触高度 18 已有效；脚底偏移不是世�
 - T01/T02：待机持续 ≥10s，前后左右、转向、停止，画面脚点 L/R 与实际足部对应，无状态/文字积累；输入、相机、动画正常。
 - T03：跳跃/落地 ≥5 次，Swing 时不报警，落地恢复 Contact。
 - T04：坡面、台阶、边缘，检查接触估计和误报；本版为单点近地估计。
-- T08：上述冻结姿态正例的红色绘制/文字与画面相符；自动化真实滑动正例已通过，但 PIE 演示画面尚未看过。
+- T08：上述冻结姿态正例的红色绘制/文字与画面相符；自动化真实滑动正例已通过，手动测试已看到部分区域的红色 `SUSPECTED SLIP`，但完整 PIE 画面矩阵尚未看过。
 - T09-T12：Details 实际调参、错误骨名、射线无命中、暂停恢复/瞬移和平台的屏幕反馈。组件/数学边界已有自动覆盖，UI 操作未验收。
 - T13/T14：显示/检测开关无残留，重复 PIE ≥3 次，离开画面再返回；禁用/EndPlay 的 Mesh 恢复已有自动覆盖。
 - T15/T16：实际 30/60/120 FPS（可用 t.MaxFPS，记录实际 FPS）、长时 ≥60s 与绘制开关 CPU 开销。受控 30/60/120 Hz 数学结果不冒充实际帧率测试。
