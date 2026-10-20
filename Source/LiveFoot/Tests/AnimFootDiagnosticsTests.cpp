@@ -77,6 +77,55 @@ bool FFootNumericalTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFootAnalysisAccumulatorTest, "LiveFoot.AnalysisAccumulator", LiveFootTestFlags)
+bool FFootAnalysisAccumulatorTest::RunTest(const FString& Parameters)
+{
+	FAnimFootAnalysisAccumulator Accumulator;
+	float SampleTime = 0.f;
+	for (int32 Index = 0; Index < 10; ++Index)
+	{
+		FAnimFootDebugResult Result;
+		Result.bValidPosition = true;
+		Result.bValidVelocity = true;
+		Result.bGroundHit = true;
+		Result.bValidGround = true;
+		Result.Phase = EAnimFootPhase::Contact;
+		Result.Issue = EAnimFootIssue::None;
+		Result.TangentSpeed = 20.f;
+		Result.SolePosition = FVector::ZeroVector;
+		SampleTime += 0.02f;
+		if (Index >= 5) { Result.bSuspectedSlip = true; }
+		Accumulator.AddSample(Result, 0.02f, SampleTime);
+	}
+	TestTrue(TEXT("Contact samples are accumulated"), Accumulator.Summary.ContactSamples == 10);
+	TestTrue(TEXT("Contact duration is accumulated in seconds"), FMath::IsNearlyEqual(Accumulator.Summary.ContactDuration, 0.2f, 0.0001f));
+	TestTrue(TEXT("Ground samples are counted"), Accumulator.Summary.GroundSamples == 10);
+	TestTrue(TEXT("Suspected slip samples and duration are bounded and counted"),
+		Accumulator.Summary.SuspectedSlipSamples == 5 && FMath::IsNearlyEqual(Accumulator.Summary.SuspectedSlipDuration, 0.1f, 0.0001f));
+	TestTrue(TEXT("Tangent speed summary is populated"), Accumulator.Summary.bHasTangentSpeed
+		&& FMath::IsNearlyEqual(Accumulator.Summary.MeanTangentSpeed, 20.f, 0.0001f)
+		&& FMath::IsNearlyEqual(Accumulator.Summary.P95TangentSpeed, 20.f, 0.0001f));
+	TestTrue(TEXT("Phase and suspected slip intervals are emitted"), Accumulator.Intervals.Num() == 2
+		&& Accumulator.Intervals[0].Kind == EAnimFootIntervalKind::Phase
+		&& Accumulator.Intervals[1].Kind == EAnimFootIntervalKind::SuspectedSlip);
+
+	for (int32 Index = 0; Index < FAnimFootAnalysisAccumulator::RecentSpeedWindow + 32; ++Index)
+	{
+		FAnimFootDebugResult Result;
+		Result.bValidPosition = true;
+		Result.bValidVelocity = true;
+		Result.Phase = EAnimFootPhase::Contact;
+		Result.TangentSpeed = static_cast<float>(Index);
+		SampleTime += 0.01f;
+		Accumulator.AddSample(Result, 0.01f, SampleTime);
+	}
+	TestTrue(TEXT("Recent tangent speed window is bounded"), Accumulator.Summary.bP95UsesRecentWindow
+		&& Accumulator.Summary.P95TangentSpeed >= 0.f);
+	Accumulator.Reset();
+	TestTrue(TEXT("Reset clears summaries and intervals"), Accumulator.Summary.SampleCount == 0 && Accumulator.Intervals.Num() == 0);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFootBoundaryTest, "LiveFoot.Boundaries", LiveFootTestFlags)
 bool FFootBoundaryTest::RunTest(const FString& Parameters)
 {
@@ -189,6 +238,8 @@ bool FFootComponentTest::RunTest(const FString& Parameters)
 	for (int32 I = 0; I < 60; ++I) { Tick(); }
 	TestTrue(TEXT("Left samples real skeletal pose"), Debug->LeftFoot.bValidPosition);
 	TestTrue(TEXT("Right samples real skeletal pose"), Debug->RightFoot.bValidPosition);
+	TestTrue(TEXT("Left runtime summary receives real samples"), Debug->LeftSummary.SampleCount > 0 && Debug->LeftSummary.ValidPositionSamples > 0);
+	TestTrue(TEXT("Right runtime summary receives real samples"), Debug->RightSummary.SampleCount > 0 && Debug->RightSummary.ValidPositionSamples > 0);
 	TestTrue(TEXT("Own capsule ignored: ground trace hits floor"), Debug->LeftFoot.bGroundHit && Debug->RightFoot.bGroundHit);
 	AddInfo(FString::Printf(TEXT("Real Quinn ankle heights L=%.3f R=%.3f cm; phases L=%s R=%s"), Debug->LeftFoot.Height,
 		Debug->RightFoot.Height, AnimFootDiagnostics::PhaseText(Debug->LeftFoot.Phase), AnimFootDiagnostics::PhaseText(Debug->RightFoot.Phase)));

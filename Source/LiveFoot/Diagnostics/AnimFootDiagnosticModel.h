@@ -27,3 +27,30 @@ namespace AnimFootDiagnostics
 	LIVEFOOT_API const TCHAR* IssueText(EAnimFootIssue Issue);
 	LIVEFOOT_API const TCHAR* PhaseText(EAnimFootPhase Phase);
 }
+
+/**
+ * Bounded, UObject-free runtime aggregation. It intentionally keeps only a recent
+ * tangent-speed window so long-running PIE sessions cannot grow memory without limit.
+ */
+struct LIVEFOOT_API FAnimFootAnalysisAccumulator
+{
+	static constexpr int32 MaxIntervals = 64;
+	static constexpr int32 RecentSpeedWindow = 256;
+
+	FAnimFootAnalysisSummary Summary;
+	TArray<FAnimFootAnalysisInterval> Intervals;
+
+	void Reset();
+	void AddSample(const FAnimFootDebugResult& Result, float DeltaTime, float SampleTime);
+
+private:
+	TArray<float> RecentTangentSpeeds;
+	double TangentSpeedSum = 0.0;
+	int32 ActivePhaseInterval = INDEX_NONE;
+	int32 ActiveSlipInterval = INDEX_NONE;
+
+	void AddInterval(const FAnimFootAnalysisInterval& Interval, int32& ActiveIndex);
+	void UpdatePhaseInterval(const FAnimFootDebugResult& Result, float StartTime, float EndTime);
+	void UpdateSlipInterval(const FAnimFootDebugResult& Result, float StartTime, float EndTime);
+	void UpdateP95();
+};

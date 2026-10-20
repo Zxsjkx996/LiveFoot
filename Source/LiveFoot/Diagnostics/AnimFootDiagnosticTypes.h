@@ -14,6 +14,13 @@ enum class EAnimFootIssue : uint8
 	Penetration, MovingGround
 };
 
+UENUM(BlueprintType)
+enum class EAnimFootIntervalKind : uint8
+{
+	Phase,
+	SuspectedSlip
+};
+
 /** Distances are cm (UE world units), speeds cm/s, times seconds, slope degrees. */
 USTRUCT(BlueprintType)
 struct LIVEFOOT_API FAnimFootDiagnosticSettings
@@ -86,4 +93,46 @@ struct LIVEFOOT_API FAnimFootDebugResult
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot", meta=(Units="cm/s")) float VerticalSpeed = 0.f;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot", meta=(Units="cm/s")) float RawTangentSpeed = 0.f;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot", meta=(Units="cm/s")) float TangentSpeed = 0.f;
+};
+
+/** A bounded runtime interval. Times are seconds in the component's continuous sample timeline. */
+USTRUCT(BlueprintType)
+struct LIVEFOOT_API FAnimFootAnalysisInterval
+{
+	GENERATED_BODY()
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis") EAnimFootIntervalKind Kind = EAnimFootIntervalKind::Phase;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis") EAnimFootPhase Phase = EAnimFootPhase::Unknown;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis") EAnimFootIssue Issue = EAnimFootIssue::None;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis") bool bSuspectedSlip = false;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis", meta=(Units="s")) float StartTime = 0.f;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis", meta=(Units="s")) float EndTime = 0.f;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis", meta=(Units="s")) float Duration = 0.f;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis", meta=(Units="cm/s")) float MaxTangentSpeed = 0.f;
+};
+
+/** Bounded, incrementally maintained metrics for one foot. P95 uses a recent sample window. */
+USTRUCT(BlueprintType)
+struct LIVEFOOT_API FAnimFootAnalysisSummary
+{
+	GENERATED_BODY()
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis") int32 SampleCount = 0;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis") int32 ValidPositionSamples = 0;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis") int32 ValidVelocitySamples = 0;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis") int32 ContactSamples = 0;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis") int32 SwingSamples = 0;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis") int32 UnknownSamples = 0;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis") int32 GroundSamples = 0;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis") int32 SuspectedSlipSamples = 0;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis", meta=(Units="s")) float SampleDuration = 0.f;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis", meta=(Units="s")) float ContactDuration = 0.f;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis", meta=(Units="s")) float SwingDuration = 0.f;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis", meta=(Units="s")) float UnknownDuration = 0.f;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis", meta=(Units="s")) float SuspectedSlipDuration = 0.f;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis", meta=(Units="cm/s")) float MeanTangentSpeed = 0.f;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis", meta=(Units="cm/s")) float MaxTangentSpeed = 0.f;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis", meta=(Units="cm/s")) float P95TangentSpeed = 0.f;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis") bool bHasTangentSpeed = false;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis") bool bP95UsesRecentWindow = false;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis") EAnimFootPhase LastPhase = EAnimFootPhase::Unknown;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="LiveFoot|Analysis") EAnimFootIssue LastIssue = EAnimFootIssue::Warmup;
 };

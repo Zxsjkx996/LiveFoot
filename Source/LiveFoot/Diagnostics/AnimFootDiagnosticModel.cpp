@@ -1,4 +1,5 @@
 #include "AnimFootDiagnosticModel.h"
+#include "Algo/Sort.h"
 
 bool FAnimFootDiagnosticSettings::IsValid() const
 {
@@ -174,4 +175,145 @@ const TCHAR* AnimFootDiagnostics::IssueText(EAnimFootIssue I)
 	case EAnimFootIssue::MovingGround: return TEXT("moving/non-static ground: slip N/A");
 	default: return TEXT("unknown");
 	}
+}
+
+void FAnimFootAnalysisAccumulator::Reset()
+{
+	Summary = FAnimFootAnalysisSummary();
+	Intervals.Reset();
+	RecentTangentSpeeds.Reset();
+	TangentSpeedSum = 0.0;
+	ActivePhaseInterval = INDEX_NONE;
+	ActiveSlipInterval = INDEX_NONE;
+}
+
+void FAnimFootAnalysisAccumulator::AddInterval(const FAnimFootAnalysisInterval& Interval, int32& ActiveIndex)
+{
+	if (Intervals.Num() >= MaxIntervals)
+	{
+		Intervals.RemoveAt(0, 1, EAllowShrinking::No);
+		if (ActivePhaseInterval != INDEX_NONE) { --ActivePhaseInterval; }
+		if (ActiveSlipInterval != INDEX_NONE) { --ActiveSlipInterval; }
+		if (ActivePhaseInterval < 0) { ActivePhaseInterval = INDEX_NONE; }
+		if (ActiveSlipInterval < 0) { ActiveSlipInterval = INDEX_NONE; }
+	}
+	ActiveIndex = Intervals.Add(Interval);
+}
+
+void FAnimFootAnalysisAccumulator::UpdatePhaseInterval(const FAnimFootDebugResult& Result, float StartTime, float EndTime)
+{
+	if (ActivePhaseInterval != INDEX_NONE && Intervals.IsValidIndex(ActivePhaseInterval)
+		&& Intervals[ActivePhaseInterval].Kind == EAnimFootIntervalKind::Phase
+		&& Intervals[ActivePhaseInterval].Phase == Result.Phase)
+	{
+		FAnimFootAnalysisInterval& Interval = Intervals[ActivePhaseInterval];
+		Interval.EndTime = FMath::Max(Interval.EndTime, EndTime);
+		Interval.Duration = FMath::Max(0.f, Interval.EndTime - Interval.StartTime);
+		Interval.Issue = Result.Issue;
+		Interval.MaxTangentSpeed = FMath::Max(Interval.MaxTangentSpeed, Result.bValidGround && Result.bValidVelocity ? Result.TangentSpeed : 0.f);
+		return;
+	}
+
+	FAnimFootAnalysisInterval Interval;
+	Interval.Kind = EAnimFootIntervalKind::Phase;
+	Interval.Phase = Result.Phase;
+	Interval.Issue = Result.Issue;
+	Interval.StartTime = StartTime;
+	Interval.EndTime = EndTime;
+	Interval.Duration = FMath::Max(0.f, EndTime - StartTime);
+	Interval.MaxTangentSpeed = Result.bValidGround && Result.bValidVelocity ? FMath::Max(0.f, Result.TangentSpeed) : 0.f;
+	AddInterval(Interval, ActivePhaseInterval);
+}
+
+void FAnimFootAnalysisAccumulator::UpdateSlipInterval(const FAnimFootDebugResult& Result, float StartTime, float EndTime)
+{
+	if (!Result.bSuspectedSlip)
+	{
+		ActiveSlipInterval = INDEX_NONE;
+		return;
+	}
+
+	if (ActiveSlipInterval != INDEX_NONE && Intervals.IsValidIndex(ActiveSlipInterval)
+		&& Intervals[ActiveSlipInterval].Kind == EAnimFootIntervalKind::SuspectedSlip)
+	{
+		FAnimFootAnalysisInterval& Interval = Intervals[ActiveSlipInterval];
+		Interval.EndTime = FMath::Max(Interval.EndTime, EndTime);
+		Interval.Duration = FMath::Max(0.f, Interval.EndTime - Interval.StartTime);
+		Interval.Issue = Result.Issue;
+		Interval.MaxTangentSpeed = FMath::Max(Interval.MaxTangentSpeed, Result.bValidVelocity ? Result.TangentSpeed : 0.f);
+		return;
+	}
+
+	FAnimFootAnalysisInterval Interval;
+	Interval.Kind = EAnimFootIntervalKind::SuspectedSlip;
+	Interval.Phase = Result.Phase;
+	Interval.Issue = Result.Issue;
+	Interval.bSuspectedSlip = true;
+	Interval.StartTime = StartTime;
+	Interval.EndTime = EndTime;
+	Interval.Duration = FMath::Max(0.f, EndTime - StartTime);
+	Interval.MaxTangentSpeed = Result.bValidVelocity ? FMath::Max(0.f, Result.TangentSpeed) : 0.f;
+	AddInterval(Interval, ActiveSlipInterval);
+}
+
+void FAnimFootAnalysisAccumulator::UpdateP95()
+{
+	if (RecentTangentSpeeds.Num() == 0)
+	{
+		Summary.P95TangentSpeed = 0.f;
+		Summary.bP95UsesRecentWindow = false;
+		return;
+	}
+	TArray<float> Sorted = RecentTangentSpeeds;
+	Sorted.Sort();
+	const int32 Index = FMath::Clamp(FMath::CeilToInt(static_cast<float>(Sorted.Num()) * 0.95f) - 1, 0, Sorted.Num() - 1);
+	Summary.P95TangentSpeed = Sorted[Index];
+	Summary.bP95UsesRecentWindow = Summary.ValidVelocitySamples > RecentSpeedWindow;
+}
+
+void FAnimFootAnalysisAccumulator::AddSample(const FAnimFootDebugResult& Result, float DeltaTime, float SampleTime)
+{
+	if (!FMath::IsFinite(DeltaTime) || DeltaTime <= 0.f || !FMath::IsFinite(SampleTime)
+		|| !Result.bValidPosition || !AnimFootDiagnostics::IsFiniteVector(Result.SolePosition))
+	{
+		return;
+	}
+
+	const float StartTime = FMath::Max(0.f, SampleTime - DeltaTime);
+	Summary.SampleCount++;
+	Summary.ValidPositionSamples++;
+	Summary.SampleDuration += DeltaTime;
+	Summary.LastPhase = Result.Phase;
+	Summary.LastIssue = Result.Issue;
+
+	if (Result.bValidVelocity && FMath::IsFinite(Result.TangentSpeed) && Result.TangentSpeed >= 0.f)
+	{
+		Summary.ValidVelocitySamples++;
+		RecentTangentSpeeds.Add(Result.TangentSpeed);
+		TangentSpeedSum += Result.TangentSpeed;
+		if (RecentTangentSpeeds.Num() > RecentSpeedWindow)
+		{
+			RecentTangentSpeeds.RemoveAt(0, 1, EAllowShrinking::No);
+		}
+		Summary.bHasTangentSpeed = true;
+		Summary.MeanTangentSpeed = static_cast<float>(TangentSpeedSum / FMath::Max(1, Summary.ValidVelocitySamples));
+		Summary.MaxTangentSpeed = FMath::Max(Summary.MaxTangentSpeed, Result.TangentSpeed);
+	}
+	else if (Summary.ValidVelocitySamples == 0)
+	{
+		Summary.MeanTangentSpeed = 0.f;
+	}
+
+	switch (Result.Phase)
+	{
+	case EAnimFootPhase::Contact: ++Summary.ContactSamples; Summary.ContactDuration += DeltaTime; break;
+	case EAnimFootPhase::Swing: ++Summary.SwingSamples; Summary.SwingDuration += DeltaTime; break;
+	default: ++Summary.UnknownSamples; Summary.UnknownDuration += DeltaTime; break;
+	}
+	if (Result.bGroundHit && Result.bValidGround) { ++Summary.GroundSamples; }
+	if (Result.bSuspectedSlip) { ++Summary.SuspectedSlipSamples; Summary.SuspectedSlipDuration += DeltaTime; }
+
+	UpdatePhaseInterval(Result, StartTime, SampleTime);
+	UpdateSlipInterval(Result, StartTime, SampleTime);
+	UpdateP95();
 }

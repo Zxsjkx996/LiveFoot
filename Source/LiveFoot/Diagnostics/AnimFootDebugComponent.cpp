@@ -107,9 +107,12 @@ void UAnimFootDebugComponent::ResetSamples()
 {
 	for (FFootRuntime& F : Feet)
 	{
-		F.History = FAnimFootHistory(); F.Ground.Reset(); F.bGroundMoved = false;
+		F.History = FAnimFootHistory(); F.Analysis.Reset(); F.AnalysisTime = 0.f;
+		F.Ground.Reset(); F.bGroundMoved = false;
 	}
 	LeftFoot = FAnimFootDebugResult(); RightFoot = FAnimFootDebugResult();
+	LeftSummary = FAnimFootAnalysisSummary(); RightSummary = FAnimFootAnalysisSummary();
+	LeftIntervals.Reset(); RightIntervals.Reset();
 	LastRealSampleTime = 0.;
 }
 
@@ -259,6 +262,27 @@ void UAnimFootDebugComponent::SampleFoot(int32 I, float Dt, bool bAirborne)
 		bStaticGround = Ground->GetMobility() == EComponentMobility::Static && !F.bGroundMoved && !Ground->IsSimulatingPhysics();
 	}
 	AnimFootDiagnostics::Analyze(R, F.History, Settings, Dt, bAirborne, bStaticGround);
+	if (R.Issue == EAnimFootIssue::InvalidParameters || R.Issue == EAnimFootIssue::InvalidDeltaTime
+		|| R.Issue == EAnimFootIssue::Teleport || R.Issue == EAnimFootIssue::Penetration)
+	{
+		F.Analysis.Reset();
+		F.AnalysisTime = 0.f;
+		if (I == 0) { LeftSummary = F.Analysis.Summary; LeftIntervals.Reset(); }
+		else { RightSummary = F.Analysis.Summary; RightIntervals.Reset(); }
+		return;
+	}
+	F.AnalysisTime += Dt;
+	F.Analysis.AddSample(R, Dt, F.AnalysisTime);
+	if (I == 0)
+	{
+		LeftSummary = F.Analysis.Summary;
+		LeftIntervals = F.Analysis.Intervals;
+	}
+	else
+	{
+		RightSummary = F.Analysis.Summary;
+		RightIntervals = F.Analysis.Intervals;
+	}
 }
 
 void UAnimFootDebugComponent::DrawFoot(int32 I, bool bUpdateScreen)

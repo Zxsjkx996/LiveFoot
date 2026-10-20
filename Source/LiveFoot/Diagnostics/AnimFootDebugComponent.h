@@ -31,6 +31,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="LiveFoot", meta=(ShowOnlyInnerProperties)) FAnimFootDiagnosticSettings Settings;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category="LiveFoot|Results") FAnimFootDebugResult LeftFoot;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category="LiveFoot|Results") FAnimFootDebugResult RightFoot;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category="LiveFoot|Results") FAnimFootAnalysisSummary LeftSummary;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category="LiveFoot|Results") FAnimFootAnalysisSummary RightSummary;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category="LiveFoot|Results") TArray<FAnimFootAnalysisInterval> LeftIntervals;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category="LiveFoot|Results") TArray<FAnimFootAnalysisInterval> RightIntervals;
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 protected:
@@ -40,6 +44,8 @@ private:
 	struct FFootRuntime
 	{
 		FAnimFootHistory History;
+		FAnimFootAnalysisAccumulator Analysis;
+		float AnalysisTime = 0.f;
 		int32 BoneIndex = INDEX_NONE;
 		FName ResolvedBone = NAME_None;
 		FName RequestedBone = NAME_None;
